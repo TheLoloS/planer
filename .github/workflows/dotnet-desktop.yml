@@ -5,6 +5,8 @@ name: .NET Desktop CI
 on:
   push:
     branches: [ "master" ]
+    tags:
+      - 'v*'
   pull_request:
     branches: [ "master" ]
 
@@ -45,3 +47,8 @@ jobs:
       with:
         name: planer-publish-${{ matrix.configuration }}
         path: ${{ github.workspace }}\artifacts\publish\${{ matrix.configuration }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(g
