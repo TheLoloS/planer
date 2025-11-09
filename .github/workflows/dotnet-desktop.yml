@@ -22,33 +22,91 @@ jobs:
       Runtime: win-x64
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: 8.0.x
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
 
-    - name: Restore
-      run: dotnet restore ${{ env.Solution_Name }}
+      - name: Restore
+        run: dotnet restore ${{ env.Solution_Name }}
 
-    - name: Build
-      run: dotnet build ${{ env.Solution_Name }} -c ${{ matrix.configuration }} --no-restore
+      - name: Build
+        run: dotnet build ${{ env.Solution_Name }} -c ${{ matrix.configuration }} --no-restore
 
-    - name: Publish (win-x64)
-      run: |
-        dotnet publish ${{ env.Project_Path }} -c ${{ matrix.configuration }} -r ${{ env.Runtime }} --self-contained false -p:PublishSingleFile=false -o ${{ github.workspace }}\artifacts\publish\${{ matrix.configuration }}
+      - name: Publish (win-x64)
+        run: |
+          dotnet publish ${{ env.Project_Path }} -c ${{ matrix.configuration }} -r ${{ env.Runtime }} --self-contained false -p:PublishSingleFile=false -o ${{ github.workspace }}\artifacts\publish\${{ matrix.configuration }}
 
-    - name: Upload published artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: planer-publish-${{ matrix.configuration }}
-        path: ${{ github.workspace }}\artifacts\publish\${{ matrix.configuration }}
+      - name: Upload published artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: planer-publish-${{ matrix.configuration }}
+          path: ${{ github.workspace }}\artifacts\publish\${{ matrix.configuration }}
 
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(g
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/master'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Release artifact (Release configuration)
+        uses: actions/download-artifact@v4
+        with:
+          name: planer-publish-Release
+          path: ./publish
+
+      - name: Create ZIP of published files
+        run: |
+          mkdir -p out
+          cd publish
+          zip -r ../out/planer-publish-${{ github.run_number }}.zip .
+        shell: bash
+
+      - name: Create release from tag
+        if: startsWith(github.ref, 'refs/tags/')
+        id: create_release_tag
+        uses: actions/create-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: ${{ github.ref_name }}
+          body: Automatic release created by CI for ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create release for master (generated tag)
+        if: github.ref == 'refs/heads/master'
+        id: create_release_master
+        uses: actions/create-release@v1
+        with:
+          tag_name: v${{ github.run_number }}
+          release_name: Release v${{ github.run_number }}
+          body: Automatic release created by CI for commit ${{ github.sha }} (master)
+          draft: false
+          prerelease: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload asset to tag release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release_tag.outputs.upload_url }}
+          asset_path: ./out/planer-publish-${{ github.run_number }}.zip
+          asset_name: planer-publish-${{ github.run_number }}.zip
+          asset_content_type: application/zip
+
+      - name: Upload asset to master release
+        if: github.ref == 'refs/heads/master'
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release_master.outputs.upload_url }}
+          asset_path: ./out/planer-publish-${{ github.run_number }}.zip
+          asset_name: planer-publish-${{ github.run_number }}.zip
+          asset_content_type: application/zip
